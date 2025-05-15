@@ -3,3 +3,6 @@ retrieval/.idea/
 retrieval/.ipynb_checkpoints/
 .venv/
 __pycache__/
+prompt/
+data/
+logs/

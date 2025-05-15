@@ -1,0 +1,61 @@
+# Model configuration
+model:
+  arch: resnet50
+  pretrained: 1
+  efficient: 1  # Use MRL-E
+  mrl: 0  # Don't use regular MRL (since efficient is 1)
+  nesting_start: 3
+  fixed_feature: 2048
+  num_classes: 1000  # Adjust this to match your custom dataset
+
+# Resolution settings - kept similar to original
+resolution:
+  min_res: 160
+  max_res: 192
+  end_ramp: 34
+  start_ramp: 29
+
+# Dataset configuration
+data:
+  train_dataset: "/home/mmkuznecov/SkolCourses/DL/FINAL_PROJECT/MRL/data/imagenet_train.dat"  # Update these paths
+  val_dataset: "/home/mmkuznecov/SkolCourses/DL/FINAL_PROJECT/MRL/data/imagenet_val.dat"     # Update these paths
+  num_workers: 12
+  in_memory: 1
+
+# Learning rate configuration
+lr:
+  step_ratio: 0.1
+  step_length: 30
+  lr_schedule_type: cyclic
+  lr: 0.2125  # Using original value
+  lr_peak_epoch: 2
+
+# Logging settings
+logging:
+  folder: "./logs"
+  log_level: 1
+
+# Validation settings
+validation:
+  batch_size: 512
+  resolution: 256  # Using original value
+  lr_tta: 1
+
+# Training parameters
+training:
+  eval_only: 0
+  path: null
+  batch_size: 512  # Using original value
+  optimizer: sgd
+  momentum: 0.9
+  weight_decay: 0.0001  # Using original value
+  epochs: 60  # Using original value
+  label_smoothing: 0.1
+  distributed: 0  # Set to 1 if using multiple GPUs
+  use_blurpool: 1
+
+# Distributed training options
+dist:
+  world_size: 1  # Set to number of GPUs
+  address: localhost
+  port: 12355  # Now defined as integer

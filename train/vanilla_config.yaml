@@ -1,0 +1,26 @@
+{
+    "arch": "resnet50",
+    "pretrained": true,
+    "efficient": false,
+    "mrl": true,
+    "nesting_start": 3,
+    "use_blurpool": true,
+    
+    "train_dataset": "../data/imagenet_1k_resized_256_train",
+    "val_dataset": "../data/imagenet_1k_resized_256_val",
+    "num_workers": 8,
+    
+    "batch_size": 512,
+    "val_batch_size": 512,
+    "epochs": 90,
+    
+    "optimizer": "sgd",
+    "momentum": 0.9,
+    "weight_decay": 4e-5,
+    "label_smoothing": 0.1,
+    
+    "lr": 0.1,
+    "lr_schedule_type": "cosine",
+    
+    "log_folder": "logs/mrl_training"
+}
