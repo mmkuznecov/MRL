@@ -22,3 +22,5 @@ python train_custom.py --config train_config_custom.yaml
 ```
 
 In `tests.ipynb` there is example of loading weights.
+
+In `mri_checkout.ipynb` there is example of using handsome loader.
