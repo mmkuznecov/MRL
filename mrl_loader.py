@@ -419,6 +419,187 @@ class MRLLoader:
             
             else:
                 return logits, embeddings
+    
+    def extract_all_embeddings(self, input_data: Union[torch.Tensor, Image.Image, List[Image.Image], np.ndarray],
+                              dims: List[int] = None) -> Dict[int, torch.Tensor]:
+        """
+        Extract embeddings for all or specified dimensions in a single pass.
+        This is much more efficient than extracting embeddings for each dimension separately.
+        
+        Args:
+            input_data: Input data (same formats as predict method)
+            dims: List of dimensions to extract. If None, extracts all available dimensions.
+            
+        Returns:
+            Dictionary mapping dimensions to their embedding tensors
+            {dimension: embedding_tensor of shape [batch_size, dimension]}
+        """
+        self.model.eval()
+        
+        # Use all dimensions if not specified
+        if dims is None:
+            dims = self.nesting_list
+        else:
+            # Validate dimensions
+            for dim in dims:
+                if dim not in self.nesting_list:
+                    available_dims = ", ".join(str(d) for d in self.nesting_list)
+                    raise ValueError(f"Dimension {dim} is not available. Available dimensions: {available_dims}")
+        
+        # Process input data
+        with torch.no_grad():
+            # Process input to tensor format
+            img_tensor = self._process_input(input_data)
+            
+            # Get full embeddings once
+            full_embeddings = self._extract_embeddings(img_tensor)
+            
+            # Create dictionary of embeddings for each dimension
+            embeddings_dict = {}
+            for dim in dims:
+                embeddings_dict[dim] = full_embeddings[:, :dim]
+        
+        return embeddings_dict
+    
+    def predict_all_dimensions(self, input_data: Union[torch.Tensor, Image.Image, List[Image.Image], np.ndarray],
+                               return_probabilities: bool = False, return_top_k: int = None,
+                               dims: List[int] = None) -> Dict[int, Union[torch.Tensor, Tuple]]:
+        """
+        Make predictions for all or specified dimensions in a single pass.
+        
+        Args:
+            input_data: Input data (same formats as predict method)
+            return_probabilities: Whether to return probability distributions
+            return_top_k: If not None, return only the top k predictions
+            dims: List of dimensions to use. If None, uses all available dimensions.
+            
+        Returns:
+            Dictionary mapping dimensions to their prediction outputs
+            Format of each prediction follows the predict() method based on parameters
+        """
+        self.model.eval()
+        
+        # Use all dimensions if not specified
+        if dims is None:
+            dims = self.nesting_list
+        else:
+            # Validate dimensions
+            for dim in dims:
+                if dim not in self.nesting_list:
+                    available_dims = ", ".join(str(d) for d in self.nesting_list)
+                    raise ValueError(f"Dimension {dim} is not available. Available dimensions: {available_dims}")
+        
+        # Process input data
+        with torch.no_grad():
+            # Process input to tensor format
+            img_tensor = self._process_input(input_data)
+            
+            # Get full outputs once
+            outputs = self.model(img_tensor)
+            
+            # Create dictionary of predictions for each dimension
+            predictions_dict = {}
+            
+            for dim in dims:
+                dim_index = self.nesting_list.index(dim)
+                logits = outputs[dim_index]
+                
+                # Process output based on parameters
+                if return_top_k is not None:
+                    if return_probabilities:
+                        probs = F.softmax(logits, dim=1)
+                        values, indices = torch.topk(probs, k=return_top_k, dim=1)
+                    else:
+                        values, indices = torch.topk(logits, k=return_top_k, dim=1)
+                    
+                    predictions_dict[dim] = (values, indices)
+                
+                elif return_probabilities:
+                    predictions_dict[dim] = F.softmax(logits, dim=1)
+                
+                else:
+                    predictions_dict[dim] = logits
+        
+        return predictions_dict
+    
+    def predict_with_all_embeddings(self, input_data: Union[torch.Tensor, Image.Image, List[Image.Image], np.ndarray],
+                                   return_probabilities: bool = False, return_top_k: int = None,
+                                   dims: List[int] = None) -> Dict[int, Tuple]:
+        """
+        Make predictions and extract embeddings for all or specified dimensions in a single pass.
+        This is the most efficient way to get both predictions and embeddings for multiple dimensions.
+        
+        Args:
+            input_data: Input data (same formats as predict method)
+            return_probabilities: Whether to return probability distributions
+            return_top_k: If not None, return only the top k predictions
+            dims: List of dimensions to use. If None, uses all available dimensions.
+            
+        Returns:
+            Dictionary mapping dimensions to tuples of (predictions, embeddings)
+            Format of each prediction follows the predict() method based on parameters
+        """
+        self.model.eval()
+        
+        # Use all dimensions if not specified
+        if dims is None:
+            dims = self.nesting_list
+        else:
+            # Validate dimensions
+            for dim in dims:
+                if dim not in self.nesting_list:
+                    available_dims = ", ".join(str(d) for d in self.nesting_list)
+                    raise ValueError(f"Dimension {dim} is not available. Available dimensions: {available_dims}")
+        
+        # Process input data
+        with torch.no_grad():
+            # Process input to tensor format
+            img_tensor = self._process_input(input_data)
+            
+            # Get full embeddings once
+            full_embeddings = self._extract_embeddings(img_tensor)
+            
+            # Create dictionary to store results
+            results_dict = {}
+            
+            for dim in dims:
+                dim_index = self.nesting_list.index(dim)
+                
+                # Slice embeddings to this dimension
+                embeddings = full_embeddings[:, :dim]
+                
+                # Get predictions
+                if self.efficient:
+                    # For MRL-E, we need to use the appropriate slice of the weights
+                    classifier = getattr(self.model.fc, f"nesting_classifier_0")
+                    if classifier.bias is None:
+                        logits = torch.matmul(embeddings, 
+                                             (classifier.weight[:, :dim]).t())
+                    else:
+                        logits = torch.matmul(embeddings, 
+                                             (classifier.weight[:, :dim]).t()) + classifier.bias
+                else:
+                    # For regular MRL, use the specific classifier for this dimension
+                    classifier = getattr(self.model.fc, f"nesting_classifier_{dim_index}")
+                    logits = classifier(embeddings)
+                
+                # Process output based on parameters
+                if return_top_k is not None:
+                    if return_probabilities:
+                        probs = F.softmax(logits, dim=1)
+                        values, indices = torch.topk(probs, k=return_top_k, dim=1)
+                    else:
+                        values, indices = torch.topk(logits, k=return_top_k, dim=1)
+                    
+                    results_dict[dim] = ((values, indices), embeddings)
+                
+                elif return_probabilities:
+                    results_dict[dim] = (F.softmax(logits, dim=1), embeddings)
+                
+                else:
+                    results_dict[dim] = (logits, embeddings)
+        
+        return results_dict
 
 
 # Example usage
@@ -427,23 +608,24 @@ if __name__ == "__main__":
     model_path = "/path/to/your/model.pth"
     model = MRLLoader(weights_path=model_path)
     
-    # Example: Set embedding dimension
-    model.set_output_emb_dim(16)  # Will throw error if not available
-    
-    # Example: Get model predictions with random data
+    # Example: Get embeddings for all dimensions in one pass
     random_input = torch.randn(4, 3, 224, 224)
-    predictions = model.predict(random_input)
-    print(f"Prediction shape: {predictions.shape}")
+    all_embeddings = model.extract_all_embeddings(random_input)
+    for dim, emb in all_embeddings.items():
+        print(f"Embedding dim {dim}: {emb.shape}")
     
-    # Example: Get predictions AND embeddings in one call
-    predictions, embeddings = model.predict_with_embeddings(random_input)
-    print(f"Prediction shape: {predictions.shape}")
-    print(f"Embedding shape: {embeddings.shape}")  # [4, 16]
+    # Example: Get predictions for all dimensions in one pass
+    all_predictions = model.predict_all_dimensions(random_input, return_top_k=5)
+    for dim, (values, indices) in all_predictions.items():
+        print(f"Top classes for dim {dim}: {indices}")
     
-    # Example: Get top-5 predictions with probabilities and embeddings
-    (top_probs, top_indices), embeddings = model.predict_with_embeddings(
-        random_input, return_probabilities=True, return_top_k=5
-    )
-    print(f"Top 5 class indices: {top_indices}")
-    print(f"Top 5 probabilities: {top_probs}")
-    print(f"Embedding shape: {embeddings.shape}")
+    # Example: Get both predictions and embeddings for all dimensions
+    all_results = model.predict_with_all_embeddings(random_input, return_probabilities=True)
+    for dim, (probs, emb) in all_results.items():
+        print(f"Dim {dim}: Predictions shape {probs.shape}, Embedding shape {emb.shape}")
+    
+    # Example: Get results for specific dimensions only
+    selected_dims = [16, 128, 1024]
+    selected_results = model.predict_with_all_embeddings(random_input, dims=selected_dims)
+    for dim, (logits, emb) in selected_results.items():
+        print(f"Selected dim {dim}: Logits shape {logits.shape}, Embedding shape {emb.shape}")
