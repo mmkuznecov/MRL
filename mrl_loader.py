@@ -600,6 +600,39 @@ class MRLLoader:
                     results_dict[dim] = (logits, embeddings)
         
         return results_dict
+    
+    def forward_all_dimensions(self, input_data: Union[torch.Tensor, Image.Image, List[Image.Image], np.ndarray]) -> Dict[int, torch.Tensor]:
+        """
+        Perform a forward pass through the model and return embeddings for all dimensions simultaneously.
+        This is the most efficient way to get embeddings for all dimensions in a single pass.
+        
+        Args:
+            input_data: Input data, can be:
+                - A single PIL Image
+                - A list/batch of PIL Images
+                - A preprocessed tensor of shape [batch_size, 3, height, width]
+                - A numpy array of shape [batch_size, height, width, 3] or [height, width, 3]
+                
+        Returns:
+            Dictionary mapping dimensions to their embedding tensors
+            {dimension: embedding_tensor of shape [batch_size, dimension]}
+        """
+        self.model.eval()
+        
+        # Process input data
+        with torch.no_grad():
+            # Process input to tensor format
+            img_tensor = self._process_input(input_data)
+            
+            # Get full embeddings once
+            full_embeddings = self._extract_embeddings(img_tensor)
+            
+            # Create dictionary of embeddings for each dimension
+            embeddings_dict = {}
+            for dim in self.nesting_list:
+                embeddings_dict[dim] = full_embeddings[:, :dim]
+        
+        return embeddings_dict
 
 
 # Example usage
